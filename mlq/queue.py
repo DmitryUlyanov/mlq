@@ -16,9 +16,12 @@ import redis
 import jsonpickle
 import cloudpickle
 
+
+logging.basicConfig(level=logging.DEBUG)
+
 class MLQ():
     """Create an MLQ object"""
-    def __init__(self, q_name, redis_host, redis_port, redis_db):
+    def __init__(self, q_name, redis_host, redis_port, redis_db, redis_pass=None, binary_msgs=False):
         self.q_name = q_name
         self.processing_q = self.q_name + '_processing'
         self.job_status_stem = self.q_name + '_progress_'
@@ -27,7 +30,7 @@ class MLQ():
         # msgs have a 64 bit id starting at 0
         self.id_key = self.q_name + '_max_id'
         self.id = str(uuid())
-        self._redis = redis.StrictRedis(host=redis_host, port=redis_port, db=redis_db, decode_responses=False)
+        self._redis = redis.StrictRedis(host=redis_host, port=redis_port, db=redis_db, password=redis_pass, decode_responses=False)
         logging.info('Connected to Redis at {}:{}'.format(redis_host, redis_port))
         self.pubsub = self._redis.pubsub(ignore_subscribe_messages=True)
         self.funcs_to_execute = []
@@ -35,6 +38,7 @@ class MLQ():
         self.http = urllib3.PoolManager()
         self.loop = None
         self.pool = None
+        self.binary_msgs = binary_msgs
 
     def _create_async_stuff(self):
         self.loop = asyncio.get_event_loop()
@@ -53,7 +57,7 @@ class MLQ():
             progress_str = self._redis.get(self.job_status_stem + job_id)
             progress_dict = msgpack.unpackb(progress_str, raw=False)
             progress_dict['progress'] = progress
-            new_record = msgpack.packb(progress_dict, use_bin_type=False)
+            new_record = msgpack.packb(progress_dict, use_bin_type=self.binary_msgs)
             self._redis.set(self.job_status_stem + job_id, new_record)
             return True
 
@@ -81,11 +85,14 @@ class MLQ():
             wait_key = 'pub_' + str(job_id)
             self.pubsub.unsubscribe()
             self.pubsub.subscribe(wait_key)
+            i = 0 
             while True:
                 msg = self.pubsub.get_message()
                 if msg:
                     return msg['data']
                 time.sleep(0.001)
+                print('sleep!',i)
+
 
         return {
             'post': post,
@@ -113,12 +120,12 @@ class MLQ():
         Msg is the posted message, optional args[0] inside the function gives access
         to the entire message object (worker id, timestamp, retries etc)
         If there are multiple consumers, they get messages round-robin
-
         function can return a single item or a tuple of (short_result, long_result)
         short_result must be str, but long_result can be binary.
         """
         # TODO: Probably should be able to specify which worker will do what
         # functions. So also need an endpoint to get worker name.
+        print('hi')
         if not self.loop or not self.pool:
             self._create_async_stuff()
 
@@ -130,9 +137,21 @@ class MLQ():
         if self.listener:
             return True
         def listener():
+            print('start')
             shutdown = False
             while not shutdown:
-                msg_str = self._redis.brpoplpush(self.q_name, self.processing_q, timeout=0)
+
+                print('ping')
+                iii = 0
+                while True:
+                    msg_str = self._redis.brpoplpush(self.q_name, self.processing_q, timeout=1)
+    
+                    print(f'Waiting {iii} seconds')
+                    if msg_str is not None:
+                        break
+
+                    iii += 1
+
                 if msg_str == b'shutdown':
                     shutdown = True
                     self._redis.lrem(self.processing_q, -1, msg_str)
@@ -142,7 +161,7 @@ class MLQ():
                 msg_dict['worker'] = self.id
                 msg_dict['processing_started'] = dt.timestamp(dt.utcnow())
                 msg_dict['progress'] = 0
-                new_record = msgpack.packb(msg_dict, use_bin_type=False)
+                new_record = msgpack.packb(msg_dict, use_bin_type=self.binary_msgs)
                 self._redis.set(self.job_status_stem + str(msg_dict['id']), new_record)
                 all_ok = True
                 short_result = None
@@ -163,10 +182,10 @@ class MLQ():
                                     'success': 0,
                                     'job_id': str(msg_dict['id']),
                                     'short_result': None
-                                })
+                                }, timeout=5)
                             msg_dict['progress'] = -1
                             msg_dict['result'] = str(e)
-                            new_record = msgpack.packb(msg_dict, use_bin_type=False)
+                            new_record = msgpack.packb(msg_dict, use_bin_type=self.binary_msgs)
                             self._redis.set(self.job_status_stem + str(msg_dict['id']), new_record)
                             self._redis.rpush(self.dead_letter_q, msg_str)
                 if all_ok:
@@ -182,14 +201,14 @@ class MLQ():
                     self._redis.publish('pub_' + str(msg_dict['id']), short_result)
                     msg_dict['progress'] = 100
                     msg_dict['processing_finished'] = dt.timestamp(dt.utcnow())
-                    new_record = msgpack.packb(msg_dict, use_bin_type=False)
+                    new_record = msgpack.packb(msg_dict, use_bin_type=self.binary_msgs)
                     self._redis.set(self.job_status_stem + str(msg_dict['id']), new_record)
                     if msg_dict['callback']:
                         self.http.request('GET', msg_dict['callback'], fields={
                             'success': 1,
                             'job_id': str(msg_dict['id']),
                             'short_result': short_result
-                        })
+                        }, timeout=5)
                 self._redis.lrem(self.processing_q, -1, msg_str)
                 self._redis.lrem(self.jobs_refs_q, 1, str(msg_dict['id']))
         logging.info('Created listener')
@@ -236,14 +255,14 @@ class MLQ():
                             job['processing_started'] = None
                             job['progress'] = None
                             job['worker'] = None
-                            pipeline.lrem(self.processing_q, -1, msgpack.packb(job, use_bin_type=False))
+                            pipeline.lrem(self.processing_q, -1, msgpack.packb(job, use_bin_type=self.binary_msgs))
                             job['timestamp'] = dt.timestamp(dt.utcnow())
                             job['retries'] += 1
                             job_id = job['id']
                             if job['retries'] >= max_retries:
                                 pipeline.rpush(self.dead_letter_q, job['msg'])
                             else:
-                                job = msgpack.packb(job, use_bin_type=False)
+                                job = msgpack.packb(job, use_bin_type=self.binary_msgs)
                                 pipeline.set(self.job_status_stem + job_id, job)
                                 pipeline.lpush(self.q_name, job)
                             pipeline.lrem(self.jobs_refs_q, 1, job_id)
@@ -301,7 +320,7 @@ class MLQ():
             'functions': functions, # Which function names should be called
             'msg': msg
         }
-        job = msgpack.packb(job, use_bin_type=False)
+        job = msgpack.packb(job, use_bin_type=self.binary_msgs)
         pipeline.lpush(self.q_name, job)
         pipeline.set(self.job_status_stem + msg_id, job)
         pipeline.execute()
