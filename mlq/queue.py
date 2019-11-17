@@ -126,7 +126,7 @@ class MLQ():
         """
         # TODO: Probably should be able to specify which worker will do what
         # functions. So also need an endpoint to get worker name.
-        print('hi')
+        #print('hi')
         if not self.loop or not self.pool:
             self._create_async_stuff()
 
@@ -138,21 +138,23 @@ class MLQ():
         if self.listener:
             return True
         def listener():
-            print('start')
+            logging.info('Starting listener')
             shutdown = False
             while not shutdown:
 
-                print('ping')
+                logging.info('Waiting for a message...')
                 iii = 0
                 while True:
                     msg_str = self._redis.brpoplpush(self.q_name, self.processing_q, timeout=1)
     
-                    print(f'Waiting {iii} seconds')
+                    #print(f'Waiting {iii} seconds')
                     if msg_str is not None:
                         break
 
                     iii += 1
-
+                
+                logging.info('Received a message!')
+                
                 if msg_str == b'shutdown':
                     shutdown = True
                     self._redis.lrem(self.processing_q, -1, msg_str)
