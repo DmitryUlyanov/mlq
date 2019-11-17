@@ -5,3 +5,4 @@ cloudpickle
 jsonpickle
 flask
 gevent
+setuptools
