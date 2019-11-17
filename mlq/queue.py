@@ -11,6 +11,7 @@ from uuid import uuid1 as uuid
 
 from werkzeug.exceptions import NotFound
 
+import traceback
 import msgpack
 import redis
 import jsonpickle
@@ -176,6 +177,7 @@ class MLQ():
                         except Exception as e:
                             all_ok = False
                             logging.error(e)
+                            traceback.print_exc()
                             logging.info("Moving message {} to dead letter queue".format(msg_dict['id']))
                             if msg_dict['callback']:
                                 self.http.request('GET', msg_dict['callback'], fields={
