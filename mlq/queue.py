@@ -329,3 +329,13 @@ class MLQ():
         pipeline.set(self.job_status_stem + msg_id, job)
         pipeline.execute()
         return msg_id
+    
+    def wait_jobs(self, jobs):
+        while True:
+            time.sleep(0.1)
+            got_res = [self.get_job(x)["result"] is not None for x in jobs]
+
+            if all(got_res):
+                logging.debug("Received result.")
+                return [queue.get_job(x) for x in jobs]
+
