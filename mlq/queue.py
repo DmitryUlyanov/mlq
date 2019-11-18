@@ -340,4 +340,4 @@ class MLQ():
                 return [queue.get_job(x) for x in jobs]
             
     def wait_job(self, job_id):
-        return self.wait_jobs([job_id])
+        return self.wait_jobs([job_id])[0]
