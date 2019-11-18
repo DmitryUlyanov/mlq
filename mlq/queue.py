@@ -337,7 +337,7 @@ class MLQ():
 
             if all(got_res):
                 logging.debug("Received result.")
-                return [queue.get_job(x) for x in jobs]
+                return [self.get_job(x) for x in jobs]
             
     def wait_job(self, job_id):
         return self.wait_jobs([job_id])[0]
