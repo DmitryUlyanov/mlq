@@ -20,6 +20,8 @@ import cloudpickle
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 
+logger = logging.getLogger(f"MLQ")
+
 class MLQ():
     """Create an MLQ object"""
     def __init__(self, q_name, redis_host, redis_port, redis_db, redis_pass=None, binary_msgs=False):
@@ -32,7 +34,7 @@ class MLQ():
         self.id_key = self.q_name + '_max_id'
         self.id = str(uuid())
         self._redis = redis.StrictRedis(host=redis_host, port=redis_port, db=redis_db, password=redis_pass, decode_responses=False)
-        logging.info('Connected to Redis at {}:{}'.format(redis_host, redis_port))
+        logger.info('Connected to Redis at {}:{}'.format(redis_host, redis_port))
         self.pubsub = self._redis.pubsub(ignore_subscribe_messages=True)
         self.funcs_to_execute = []
         self.listener = None
@@ -138,11 +140,11 @@ class MLQ():
         if self.listener:
             return True
         def listener():
-            logging.info('Starting listener')
+            logger.info('Starting listener')
             shutdown = False
             while not shutdown:
 
-                logging.info('Waiting for a message...')
+                logger.info('Waiting for a message...')
                 iii = 0
                 while True:
                     msg_str = self._redis.brpoplpush(self.q_name, self.processing_q, timeout=1)
@@ -153,7 +155,7 @@ class MLQ():
 
                     iii += 1
                 
-                logging.info('Received a message!')
+                logger.info('Received a message!')
                 
                 if msg_str == b'shutdown':
                     shutdown = True
@@ -178,9 +180,9 @@ class MLQ():
                             result = func(msg_dict['msg'], utils)
                         except Exception as e:
                             all_ok = False
-                            logging.error(e)
+                            logger.error(e)
                             traceback.print_exc()
-                            logging.info("Moving message {} to dead letter queue".format(msg_dict['id']))
+                            logger.info("Moving message {} to dead letter queue".format(msg_dict['id']))
                             if msg_dict['callback']:
                                 self.http.request('GET', msg_dict['callback'], fields={
                                     'success': 0,
@@ -193,7 +195,7 @@ class MLQ():
                             self._redis.set(self.job_status_stem + str(msg_dict['id']), new_record)
                             self._redis.rpush(self.dead_letter_q, msg_str)
                 if all_ok:
-                    logging.info('Completed job {}'.format(str(msg_dict['id'])))
+                    logger.info('Completed job {}'.format(str(msg_dict['id'])))
                     msg_dict['worker'] = None
                     if result and type(result) in [tuple, list] and len(result) > 1:
                         short_result = result[0]
@@ -215,7 +217,7 @@ class MLQ():
                         }, timeout=5)
                 self._redis.lrem(self.processing_q, -1, msg_str)
                 self._redis.lrem(self.jobs_refs_q, 1, str(msg_dict['id']))
-        logging.info('Created listener')
+        logger.info('Created listener')
         self.listener = self.loop.run_in_executor(self.pool, listener)
         return True
 
@@ -248,13 +250,13 @@ class MLQ():
                         progress_key = self.job_status_stem + job_key
                         job_str = self._redis.get(progress_key)
                         if not job_str:
-                            logging.warning('Found orphan job {}'.format(job_key))
+                            logger.warning('Found orphan job {}'.format(job_key))
                             self._redis.lrem(self.jobs_refs_q, 1, job_key)
                             all_ok = False
                             continue
                         job = msgpack.unpackb(job_str, raw=False)
                         if job['progress'] != 100 and job['worker'] and time_now - job['processing_started'] > job_timeout:
-                            logging.warning('Moved job id {} on worker {} back to queue after timeout {}'.format(job['id'], job['worker'], job_timeout))
+                            logger.warning('Moved job id {} on worker {} back to queue after timeout {}'.format(job['id'], job['worker'], job_timeout))
                             pipeline = self._redis.pipeline()
                             job['processing_started'] = None
                             job['progress'] = None
@@ -307,7 +309,7 @@ class MLQ():
     def post(self, msg, callback=None, functions=None):
         msg_id = str(self._redis.incr(self.id_key))
         timestamp = dt.timestamp(dt.utcnow())
-        logging.info('Posting message with id {} to {} at {}'.format(msg_id, self.q_name, timestamp))
+        logger.info('Posting message with id {} to {} at {}'.format(msg_id, self.q_name, timestamp))
         pipeline = self._redis.pipeline()
         pipeline.rpush(self.jobs_refs_q, msg_id)
         job = {
@@ -336,7 +338,7 @@ class MLQ():
             got_res = [self.get_job(x)["result"] is not None for x in jobs]
 
             if all(got_res):
-                logging.debug("Received result.")
+                logger.debug("Received result.")
                 return [self.get_job(x) for x in jobs]
             
     def wait_job(self, job_id):
