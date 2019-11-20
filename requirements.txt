@@ -5,3 +5,4 @@ cloudpickle
 jsonpickle
 gevent
 setuptools
+werkzeug
