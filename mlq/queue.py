@@ -7,6 +7,9 @@ import json
 import pickle
 import urllib3
 import time
+from huepy import red, yellow
+import pprint
+import traceback
 from uuid import uuid1 as uuid
 
 from werkzeug.exceptions import NotFound
@@ -343,3 +346,15 @@ class MLQ():
             
     def wait_job(self, job_id):
         return self.wait_jobs([job_id])[0]
+
+    def listener_func(predictor, logger, msg):
+        logger.debug(f"{yellow('Pulled job')} {pprint.pformat(msg)}")
+        try:
+            p.predict(**mgs)
+            output = {"state": "OK"}
+        except:
+            logger.debug(red("! Failure"))
+            logger.debug(traceback.format_exc())
+            output = {"state": "Failure", "traceback": traceback.format_exc()}
+
+        return output
