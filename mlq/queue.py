@@ -21,7 +21,7 @@ import jsonpickle
 import cloudpickle
 
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
+#logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 logger = logging.getLogger(f"MLQ")
 
@@ -152,7 +152,7 @@ class MLQ():
                 while True:
                     msg_str = self._redis.brpoplpush(self.q_name, self.processing_q, timeout=1)
     
-                    #print(f'Waiting {iii} seconds')
+                    logger.info(f'Waiting {iii} seconds')
                     if msg_str is not None:
                         break
 
@@ -183,9 +183,10 @@ class MLQ():
                             result = func(msg_dict['msg'], utils)
                         except Exception as e:
                             all_ok = False
-                            logger.error(e)
-                            traceback.print_exc()
+                            logger.error(str(e))
+                            logger.error(traceback.print_exc())
                             logger.info("Moving message {} to dead letter queue".format(msg_dict['id']))
+                            logger.debug("Moving message {} to dead letter queue".format(msg_dict['id']))
                             if msg_dict['callback']:
                                 self.http.request('GET', msg_dict['callback'], fields={
                                     'success': 0,
@@ -347,14 +348,14 @@ class MLQ():
     def wait_job(self, job_id):
         return self.wait_jobs([job_id])[0]
 
-    def listener_func(predictor, logger, msg):
-        logger.debug(f"{yellow('Pulled job')} {pprint.pformat(msg)}")
-        try:
-            p.predict(**mgs)
-            output = {"state": "OK"}
-        except:
-            logger.debug(red("! Failure"))
-            logger.debug(traceback.format_exc())
-            output = {"state": "Failure", "traceback": traceback.format_exc()}
+#     def listener_func(predictor, logger, msg):
+#         logger.debug(f"{yellow('Pulled job')} {pprint.pformat(msg)}")
+#         try:
+#             p.predict(**mgs)
+#             output = {"state": "OK"}
+#         except:
+#             logger.debug(red("! Failure"))
+#             logger.debug(traceback.format_exc())
+#             output = {"state": "Failure", "traceback": traceback.format_exc()}
 
-        return output
+#         return output
