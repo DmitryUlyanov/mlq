@@ -152,7 +152,7 @@ class MLQ():
                 while True:
                     msg_str = self._redis.brpoplpush(self.q_name, self.processing_q, timeout=1)
     
-                    logger.info(f'Waiting {iii} seconds')
+                    #logger.info(f'Waiting {iii} seconds')
                     if msg_str is not None:
                         break
 
