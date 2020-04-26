@@ -251,10 +251,11 @@ class MLQ():
                     job_keys = self._redis.lrange(self.jobs_refs_q, i, i + 5)
                     all_ok = True
                     for job_key in job_keys:
-                        print('!!!!!')
-                        print(job_key)
-                        print(self.job_status_stem)
-                        print('!!!!!')
+                        job_key = job_key.decode('ascii')
+#                         print('!!!!!')
+#                         print(job_key)
+#                         print(self.job_status_stem)
+#                         print('!!!!!')
                         progress_key = self.job_status_stem + job_key
                         job_str = self._redis.get(progress_key)
                         if not job_str:
